@@ -5,10 +5,11 @@ import { fileURLToPath } from "url";
 import crypto from "crypto";
 import { Pool } from "pg";
 import fs from "fs/promises";
+import { hashPassword, safeUser } from "./security";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const app = express();
+export const app = express();
 const server = createServer(app);
 const port = Number(process.env.PORT || 3001);
 const pool = new Pool({
@@ -20,16 +21,18 @@ const pool = new Pool({
 // O PostgreSQL continua sendo suportado. Se ele não estiver disponível,
 // a aplicação inicia automaticamente em modo demonstração local.
 let demoMode = process.env.DEMO_MODE === "true";
-const demoDataFile = path.resolve(__dirname, "..", "sunhost-demo-data.json");
+const demoDataFile = process.env.DEMO_DATA_FILE || path.resolve(__dirname, "..", "sunhost-demo-data.json");
 type DemoUser = { id: string; name: string; email: string; passwordHash: string; role: "user" | "admin"; created_at: string };
 type DemoAccommodation = { id: number; owner_id: string; title: string; district: string; price: number; description: string; image_url: string | null; status: "pending" | "approved" | "rejected"; moderation_note?: string; created_at: string };
 type DemoReview = { id: number; accommodation_id: number; user_id: string; user_name: string; rating: number; body: string; status: "pending" | "approved" | "rejected"; created_at: string };
 type DemoData = { users: DemoUser[]; accommodations: DemoAccommodation[]; reviews?: DemoReview[]; favorites?: { user_id: string; accommodation_id: number }[]; nextAccommodationId: number; nextReviewId?: number };
 let demoData: DemoData = { users: [], accommodations: [], nextAccommodationId: 1 };
 
+if (process.env.NODE_ENV === "production" && (!process.env.ADMIN_PASSWORD || !process.env.PASSWORD_PEPPER)) {
+  throw new Error("Defina ADMIN_PASSWORD e PASSWORD_PEPPER antes de iniciar em produção.");
+}
+
 const sessions = new Map<string, { id: string; role: "user" | "admin"; name: string; email: string }>();
-const hashPassword = (password: string) => crypto.scryptSync(password, process.env.PASSWORD_PEPPER || "sunhost-local-pepper", 64).toString("hex");
-const safeUser = (row: any) => ({ id: row.id, name: row.name, email: row.email, role: row.role });
 const tokenFor = (user: any) => { const token = crypto.randomBytes(32).toString("hex"); sessions.set(token, safeUser(user)); return token; };
 const auth = (req: express.Request) => sessions.get(String(req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
 const requireAuth = (req: express.Request, res: express.Response) => { const user = auth(req); if (!user) { res.status(401).json({ error: "Não autenticado." }); return null; } return user; };
@@ -83,7 +86,7 @@ app.post("/api/accommodations/:id/reviews", async (req, res) => {
   await pool.query("INSERT INTO comments (accommodation_id,user_id,rating,body,status) VALUES ($1,$2,$3,$4,'approved')", [req.params.id, user.id, rating, body]); res.status(201).json({ ok: true });
 });
 
-app.post("/api/admin/ensure", async (_req, res) => { const email = (process.env.ADMIN_EMAIL || "admin@sunhost.local").toLowerCase(); if (demoMode) { await loadDemoData(); return res.json({ ok: true, email }); } try { await pool.query("INSERT INTO users (name, email, password_hash, role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) DO UPDATE SET role='admin'", ["Admin SunHost", email, hashPassword(process.env.ADMIN_PASSWORD || "Floripa@2026")]); res.json({ ok: true, email }); } catch { res.status(500).json({ error: "Não foi possível preparar o administrador." }); } });
+app.post("/api/admin/ensure", async (req, res) => { if (!requireAdmin(req, res)) return; const email = (process.env.ADMIN_EMAIL || "admin@sunhost.local").toLowerCase(); if (demoMode) { await loadDemoData(); return res.json({ ok: true, email }); } try { await pool.query("INSERT INTO users (name, email, password_hash, role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) DO UPDATE SET role='admin'", ["Admin SunHost", email, hashPassword(process.env.ADMIN_PASSWORD || "Floripa@2026")]); res.json({ ok: true, email }); } catch { res.status(500).json({ error: "Não foi possível preparar o administrador." }); } });
 
 app.get("/api/submissions", async (req, res) => {
   const user = requireAuth(req, res); if (!user) return;
@@ -92,7 +95,7 @@ app.get("/api/submissions", async (req, res) => {
 });
 
 app.post("/api/submissions", async (req, res) => {
-  const user = requireAuth(req, res); if (!user || user.role !== "user") return;
+  const user = requireAuth(req, res); if (!user) return; if (user.role !== "user") return res.status(403).json({ error: "Apenas usuários podem enviar acomodações." });
   const { title, district, price, description, imageUrl } = req.body || {};
   if (!title?.trim() || !district?.trim() || !Number(price) || !description?.trim()) return res.status(400).json({ error: "Preencha título, bairro, preço e descrição." });
   if (demoMode) { const row: DemoAccommodation = { id: demoData.nextAccommodationId++, owner_id: user.id, title: title.trim(), district: district.trim(), price: Number(price), description: description.trim(), image_url: imageUrl?.trim() || null, status: "pending", created_at: new Date().toISOString() }; demoData.accommodations.unshift(row); await saveDemoData(); return res.status(201).json({ id: row.id }); }
@@ -102,7 +105,7 @@ app.post("/api/submissions", async (req, res) => {
 app.patch("/api/submissions/:id", async (req, res) => { const user = requireAdmin(req, res); if (!user) return; const status = req.body?.status; if (!["approved", "rejected"].includes(status)) return res.status(400).json({ error: "Status inválido." }); const note = status === "approved" ? "Aprovado para exibição." : "Rejeitado pela moderação."; if (demoMode) { const row = demoData.accommodations.find(item => item.id === Number(req.params.id)); if (!row) return res.status(404).json({ error: "Acomodação não encontrada." }); row.status = status; row.moderation_note = note; await saveDemoData(); return res.json({ ok: true }); } await pool.query("UPDATE accommodations SET status=$1, moderation_note=$2 WHERE id=$3", [status, note, req.params.id]); res.json({ ok: true }); });
 app.delete("/api/submissions/:id", async (req, res) => { const user = requireAdmin(req, res); if (!user) return; if (demoMode) { demoData.accommodations = demoData.accommodations.filter(item => item.id !== Number(req.params.id)); await saveDemoData(); return res.json({ ok: true }); } await pool.query("DELETE FROM accommodations WHERE id=$1", [req.params.id]); res.json({ ok: true }); });
 
-async function start() {
+export async function start() {
   if (!demoMode) {
     try {
       const schema = await fs.readFile(path.resolve(__dirname, "..", "schema.sql"), "utf8"); await pool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto"); await pool.query(schema);
@@ -112,6 +115,12 @@ async function start() {
       demoMode = true; await loadDemoData(); console.warn("PostgreSQL indisponível. SunHost iniciado em modo demonstração local.");
     }
   } else await loadDemoData();
-  const staticPath = process.env.NODE_ENV === "production" ? path.resolve(__dirname, "public") : path.resolve(__dirname, "..", "dist", "public"); app.use(express.static(staticPath)); app.get("*", (_req, res) => res.sendFile(path.join(staticPath, "index.html"))); server.listen(port, "0.0.0.0", () => { console.log(`SunHost Floripa em http://localhost:${port}`); console.log(`Persistência: ${demoMode ? "modo demonstração local" : "PostgreSQL"}`); });
+  const staticPath = process.env.NODE_ENV === "production" ? path.resolve(__dirname, "public") : path.resolve(__dirname, "..", "dist", "public"); app.use(express.static(staticPath)); app.get("*", (_req, res) => res.sendFile(path.join(staticPath, "index.html"))); return server.listen(port, "0.0.0.0", () => { console.log(`SunHost Floripa em http://localhost:${port}`); console.log(`Persistência: ${demoMode ? "modo demonstração local" : "PostgreSQL"}`); });
 }
-start().catch(error => { console.error("Falha ao iniciar:", error); process.exit(1); });
+if (process.env.NODE_ENV !== "test") {
+  start().catch(error => { console.error("Falha ao iniciar:", error); process.exit(1); });
+}
+export async function stop() {
+  if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await pool.end();
+}

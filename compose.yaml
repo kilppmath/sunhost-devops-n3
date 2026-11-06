@@ -1,0 +1,24 @@
+services:
+  web:
+    image: ${APP_IMAGE:-sunhost:local}
+    build: .
+    ports:
+      - "80:3001"
+    env_file: .env.production
+    environment:
+      PORT: "3001"
+      NODE_ENV: production
+      DEMO_DATA_FILE: /app/data/sunhost-demo-data.json
+    volumes:
+      - sunhost-data:/app/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  sunhost-data:

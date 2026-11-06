@@ -112,3 +112,10 @@ temp/
 client/public/__manus__/version.json
 .project-config.json
 sunhost-demo-data.json
+
+# DevOps reports and production credentials
+coverage/
+.env.production
+*.pem
+*.key
+image.tar.gz

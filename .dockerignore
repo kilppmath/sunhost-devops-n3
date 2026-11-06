@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+.env
+.env.*
+coverage
+dist
+*.log
+sunhost-demo-data.json
+.manus-logs
