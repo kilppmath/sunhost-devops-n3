@@ -76,3 +76,7 @@ Usuários podem criar conta e publicar acomodações para análise. O administra
 - `server/index.ts`: API, autenticação e servidor de produção.
 - `schema.sql`: schema PostgreSQL aplicado no boot.
 - `.env.example`: variáveis de ambiente necessárias.
+
+## Projeto DevOps N3
+
+Veja [o guia DevOps](docs/DEVOPS.md) para testes, cobertura, os dois workflows, Docker, configuração da EC2 e roteiro da apresentação. Em produção, defina `ADMIN_PASSWORD` e `PASSWORD_PEPPER`; o servidor exige ambos. A rota `/api/admin/ensure` agora exige autenticação de administrador.

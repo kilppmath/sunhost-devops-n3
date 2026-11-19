@@ -1,0 +1,70 @@
+name: CI e Delivery
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop, 'feature/**']
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Análise estática TypeScript
+        run: pnpm lint
+      - name: Testes e cobertura com limites mínimos
+        run: pnpm test:coverage
+      - name: Compilar aplicação
+        run: pnpm build
+      - name: Teste de interface Selenium no Chrome
+        run: pnpm test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selenium-${{ github.sha }}
+          path: test-results/selenium/
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 14
+  delivery:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Construir a imagem testada
+        run: |
+          docker build -t sunhost:${{ github.sha }} .
+          docker save sunhost:${{ github.sha }} | gzip > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ github.sha }}
+          path: image.tar.gz
+          retention-days: 7
+          compression-level: 0
+      - name: Entregar exatamente o commit validado para main
+        run: |
+          git fetch origin main develop
+          test "$(git rev-parse origin/develop)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor origin/main "$GITHUB_SHA"
+          git push origin "$GITHUB_SHA:refs/heads/main"

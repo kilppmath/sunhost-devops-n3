@@ -1,0 +1,60 @@
+name: Deployment EC2
+on:
+  workflow_run:
+    workflows: [CI e Delivery]
+    types: [completed]
+    branches: [develop]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      EC2_HOST: ${{ vars.EC2_HOST }}
+      EC2_USER: ${{ vars.EC2_USER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Confirmar que a versão foi entregue na main
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+      - uses: actions/download-artifact@v4
+        with:
+          name: image-${{ github.event.workflow_run.head_sha }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configurar SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$EC2_HOST" && test -n "$EC2_USER"
+          test -n "$SSH_PRIVATE_KEY" && test -n "$SSH_KNOWN_HOSTS"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Enviar e implantar a imagem
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" "mkdir -p /opt/sunhost/releases/$RELEASE_SHA"
+          scp -o BatchMode=yes -o ConnectTimeout=15 image.tar.gz compose.yaml ops/deploy.sh "$EC2_USER@$EC2_HOST:/opt/sunhost/releases/$RELEASE_SHA/"
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "$EC2_USER@$EC2_HOST" "bash /opt/sunhost/releases/$RELEASE_SHA/deploy.sh $RELEASE_SHA"
+      - name: Conferir aplicação pelo IP público
+        run: curl --fail --retry 12 --retry-delay 5 --retry-connrefused "http://$EC2_HOST/api/health"
+      - name: Remover chave do runner
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
