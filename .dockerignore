@@ -8,3 +8,6 @@ dist
 *.log
 sunhost-demo-data.json
 .manus-logs
+
+.selenium-cache/
+test-results/

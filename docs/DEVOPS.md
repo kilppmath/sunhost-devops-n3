@@ -69,3 +69,13 @@ A configuração padrão usa o modo demonstração existente, com persistência 
 - Frontend `/` e `/api/health` responderam HTTP 200 no servidor compilado.
 - Validação local executada em Node 26 instalado na máquina; CI e Docker usam Node 24.
 - Docker não estava instalado: imagem, Compose, SSH, rollback e workflows ainda precisam de execução real no GitHub/EC2. Configuração AWS e acesso de escrita ao GitHub ainda não foram informados.
+
+## Teste de interface Selenium (requisito atualizado)
+
+Execute `npx pnpm@10.4.1 build` e depois `npx pnpm@10.4.1 test:ui`. O teste abre Chrome headless em perfil isolado, inicia a API em porta livre e usa arquivo de dados temporário. Verifica os cartões iniciais, busca por um destino inexistente, confere o estado vazio e usa “Limpar busca” para restaurar os cartões. Não usa a sessão pessoal do navegador.
+
+O Selenium Manager baixa o driver oficial compatível quando necessário. É preciso Chrome instalado e acesso à internet na primeira execução. Referência: https://www.selenium.dev/documentation/selenium_manager/
+
+O workflow executa o teste depois da compilação e antes da entrega. Prints de tela, resultado JSON e log do driver são publicados no artefato `selenium-<commit>`, disponível por 14 dias. Na máquina local, o Chrome encerrou na criação da sessão; a execução no GitHub deve ser conferida antes de considerar o requisito validado.
+
+O PDF atualizado informa entrega em 19/11 e exige novo repositório e teste Selenium. Repositório desta entrega: https://github.com/kilppmath/sunhost-devops-n3

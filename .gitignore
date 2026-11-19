@@ -119,3 +119,6 @@ coverage/
 *.pem
 *.key
 image.tar.gz
+
+.selenium-cache/
+test-results/
