@@ -33,6 +33,8 @@ test('Selenium: buscar destino inexistente e limpar busca restaura acomodações
     await driver.manage().setTimeouts({ pageLoad: 30_000, script: 15_000 });
     await driver.get(`http://127.0.0.1:${server.address().port}`);
     const heading = await driver.wait(until.elementLocated(By.css('h1')), 15_000);
+    await driver.wait(until.elementIsVisible(heading), 15_000);
+    await driver.wait(until.elementTextMatches(heading, /Floripa/), 15_000);
     assert.match(await heading.getText(), /Floripa/);
     const cards = By.css('#acomodacoes .stay-card');
     await driver.wait(async () => (await driver.findElements(cards)).length > 0, 10_000);
