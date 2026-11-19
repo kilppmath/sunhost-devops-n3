@@ -809,7 +809,7 @@ export default function Home() {
               <Sun size={15} /> hospedagens com propósito
             </span>
             <h1>
-              Sua próxima estadia em <em>Floripa</em> começa aqui.
+              Explore <em>Floripa</em> com a SunHost.
             </h1>
             <p>
               Espaços locais, bairros com personalidade e uma estadia que também
