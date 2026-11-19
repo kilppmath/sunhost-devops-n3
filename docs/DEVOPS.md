@@ -40,11 +40,11 @@ Para ativação inicial, publique as alterações por um PR revisável e garanta
 
 ## EC2 — preparar após confirmar a instância
 
-Use uma EC2 Ubuntu x86_64 (a imagem é construída em runner amd64). A criação da instância e o IP público podem gerar cobranças; o projeto não cria recursos automaticamente.
+A instância usada é Amazon Linux 2023 x86_64 (a imagem é construída em runner amd64). A criação da instância e o IP público podem gerar cobranças; o projeto não cria recursos automaticamente.
 
 1. Instale Docker Engine e Compose pelo procedimento oficial: https://docs.docker.com/engine/install/ubuntu/
 2. Habilite Docker no boot e configure o usuário de deploy no grupo docker. Esse grupo permite controle administrativo do host. Reconecte o SSH depois da alteração.
-3. Crie `/opt/sunhost` com o usuário de deploy como dono.
+3. Crie `/opt/sunhost` com o usuário de deploy como dono (nesta instância: `ec2-user`).
 4. Copie `ops/production.env.example` para `/opt/sunhost/.env.production` e preencha `ADMIN_PASSWORD` e `PASSWORD_PEPPER` com valores aleatórios exclusivos. Restrinja a permissão do arquivo a 600. Não versione o arquivo.
 5. Libere HTTP 80 no Security Group. O runner GitHub precisa alcançar SSH 22; configure a origem conforme a estratégia de acesso da instância. Não exponha PostgreSQL publicamente.
 6. Confira a chave de host SSH no servidor e registre o known_hosts no GitHub; o workflow mantém a verificação de identidade do servidor.
@@ -79,3 +79,13 @@ O Selenium Manager baixa o driver oficial compatível quando necessário. É pre
 O workflow executa o teste depois da compilação e antes da entrega. Prints de tela, resultado JSON e log do driver são publicados no artefato `selenium-<commit>`, disponível por 14 dias. Na máquina local, o Chrome encerrou na criação da sessão; a execução no GitHub deve ser conferida antes de considerar o requisito validado.
 
 O PDF atualizado informa entrega em 19/11 e exige novo repositório e teste Selenium. Repositório desta entrega: https://github.com/kilppmath/sunhost-devops-n3
+
+
+## Configuração da instância da entrega
+
+- EC2: `i-0ebb45bfca9bd3f8e`, região `us-east-1`, Amazon Linux 2023, usuário `ec2-user`.
+- IP público atual: `98.93.11.26`. Se a instância for parada e iniciada, confira se o IP mudou e atualize `EC2_HOST` e `SSH_KNOWN_HOSTS`.
+- Docker ativo e habilitado no boot; Compose 2.40.3 instalado da distribuição oficial e conferido por SHA-256.
+- Deploy usa `sudo -n docker`, aproveitando as permissões já existentes do usuário, sem adicioná-lo ao grupo Docker.
+- No primeiro deploy, o servidor cria `.env.production` com permissão 600 e senha e pepper aleatórios. O arquivo é preservado nas próximas versões. Não imprime os valores nos logs.
+- Identidade SSH conferida diretamente pelo terminal autenticado da AWS; chave privada armazenada criptografada nos Secrets após autorização do titular.
